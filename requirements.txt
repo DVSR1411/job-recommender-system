@@ -7,3 +7,4 @@ psycopg2-binary
 Flask
 PyPDF2
 python-docx
+streamlit
