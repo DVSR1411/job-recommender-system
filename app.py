@@ -90,9 +90,11 @@ with st.sidebar:
     # DB Status
     try:
         with st.session_state.rag.engine.connect() as conn:
-            st.success("DB Connected")
-    except:
-        st.error("DB Disconnected")
+            st.success("Database: Connected")
+        requests.get("http://localhost:11434", timeout=1)
+        st.success("Ollama: Online")
+    except Exception:
+        st.error("System Status: Connection Issues")
 
 # Main Content
 st.markdown('<h1 class="main-header">🎯 Job Recommender System</h1>', unsafe_allow_html=True)
@@ -156,7 +158,7 @@ if 'last_results' in st.session_state:
             score = job.get('final_score', 0) * 100
             
             # Determine color/label based on score
-            if score >= 75:
+            if score >= 80:
                 score_label = "Excellent Match"
                 delta_color = "normal" 
             elif score >= 60:

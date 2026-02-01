@@ -3,39 +3,25 @@ import json
 from sqlalchemy import create_engine, text
 import pandas as pd
 import re
+
 class JobRAG:
     def __init__(self, db_url, ollama_url="http://localhost:11434"):
         self.engine = create_engine(db_url)
         self.ollama_url = ollama_url
-        self.skill_patterns = {
-            "spark": r"\b(py)?spark\b",
-            "power bi": r"\bpower\s*bi\b",
-            "machine learning": r"\b(machine\s*learning|ml)\b",
-            "deep learning": r"\b(deep\s*learning|dl)\b",
-            "javascript": r"\b(java\s*script|javascript|js)\b",
-            "typescript": r"\b(type\s*script|typescript|ts)\b",
-            "postgresql": r"\b(postgres|postgresql)\b",
-            "mysql": r"\b(my\s*sql|mysql)\b",
-            "c++": r"\b(c\+\+)\b",
-            "c#": r"\b(c#|c sharp)\b",
-        }
         self.tech_skills = {
-            'python', 'java', 'javascript', 'typescript', 'c++', 'c#', 'go', 'rust', 'php', 'ruby', 'scala', 'kotlin', 'swift', 'dart', 'r', 'julia',
-            'react', 'angular', 'vue', 'svelte', 'next.js', 'nuxt.js', 'node', 'express', 'nestjs', 'django', 'flask', 'fastapi', 'spring', 'asp.net', 'laravel', 'rails',
-            'sql', 'mysql', 'postgresql', 'mongodb', 'redis', 'elasticsearch', 'cassandra', 'dynamodb', 'mariadb', 'sqlite', 'neo4j', 'couchbase',
-            'aws', 'azure', 'gcp', 'digitalocean', 'firebase', 'devops', 'docker', 'kubernetes', 'jenkins', 'terraform', 'ansible', 'helm', 'istio', 'github actions', 'circleci',
-            'machine learning', 'deep learning', 'nlp', 'computer vision', 'pytorch', 'tensorflow', 'keras', 'scikit-learn', 'pandas', 'numpy', 'matplotlib', 'seaborn', 'opencv', 'huggingface', 'llm', 'langchain', 'vector database',
-            'git', 'github', 'gitlab', 'bitbucket', 'jira', 'confluence', 'agile', 'scrum', 'kanban',
-            'html', 'css', 'sass', 'less', 'bootstrap', 'tailwind', 'material-ui', 'figma', 'adobe xd',
+            'python', 'java', 'javascript', 'typescript', 'c++', 'c#', 'go', 'rust', 'php', 'ruby',
+            'react', 'angular', 'vue', 'node', 'django', 'flask', 'fastapi', 'spring', 'asp.net',
+            'sql', 'mysql', 'postgresql', 'mongodb', 'redis', 'elasticsearch', 'cassandra',
+            'aws', 'azure', 'gcp', 'docker', 'kubernetes', 'jenkins', 'terraform', 'ansible',
+            'machine learning', 'deep learning', 'nlp', 'computer vision', 'pytorch', 'tensorflow',
+            'keras', 'scikit-learn', 'pandas', 'numpy', 'matplotlib', 'seaborn', 'opencv',
+            'git', 'github', 'gitlab', 'jira', 'confluence', 'agile', 'scrum',
+            'html', 'css', 'sass', 'less', 'bootstrap', 'tailwind',
             'linux', 'unix', 'bash', 'shell', 'powershell',
-            'data analysis', 'data engineering', 'data visualization', 'tableau', 'power bi', 'looker', 'metabase',
-            'big data', 'hadoop', 'hive', 'hbase', 'pig', 'spark', 'pyspark', 'airflow', 'sqoop', 'kafka', 'flink', 'snowflake', 'databricks', 'presto', 'trino', 'redshift', 'bigquery', 'dbt', 'clickhouse', 'druid', 'iceberg', 'delta lake',
-            'selenium', 'cypress', 'playwright', 'jest', 'mocha', 'junit', 'pytest',
-            'rest api', 'graphql', 'grpc', 'microservices', 'serverless', 'web3', 'solidity', 'ethereum', 'smart contracts',
-            'cybersecurity', 'penetration testing', 'iam', 'oauth', 'jwt', 'flutter', 'react native', 'ionic'
+            'data analysis', 'data engineering', 'data visualization', 'big data', 'hadoop', 'spark'
         }
 
-    def get_embedding(self, text): 
+    def get_embedding(self, text):
         try:
             response = requests.post(f"{self.ollama_url}/api/embeddings", 
                                    json={"model": "nomic-embed-text:v1.5", "prompt": text},
@@ -44,75 +30,66 @@ class JobRAG:
             return response.json()["embedding"]
         except Exception as e:
             print(f"Embedding error: {e}")
-            raise Exception(f"Embedding failed: {str(e)}")
+            return None
 
     def extract_skills(self, text):
         if not text:
             return set()
-
-        text = text.lower()
+        text_lower = text.lower()
         found_skills = set()
-
-        for skill, pattern in self.skill_patterns.items():
-            if re.search(pattern, text):
-                found_skills.add(skill)
-
         for skill in self.tech_skills:
-            if skill in found_skills:
-                continue
-            pattern = r"\b" + re.escape(skill) + r"\b"
-            if re.search(pattern, text):
+            pattern = r'\b' + re.escape(skill) + r'\b'
+            if re.search(pattern, text_lower):
                 found_skills.add(skill)
-
         return found_skills
 
     def calculate_skill_match(self, job_desc, user_skills):
         if not user_skills:
-            return 0.0, set(), set()
+            return 0.0, set()
         job_skills = self.extract_skills(job_desc)
         if not job_skills:
-            return 0.0, set(), set()
+            return 0.0, set()
         common_skills = user_skills.intersection(job_skills)
         if not common_skills:
-            return 0.0, set(), job_skills
-
+            return 0.0, set()
         score = len(common_skills) / len(user_skills)
-        return min(score, 1.0), common_skills, job_skills
+        return min(score, 1.0), common_skills
 
     def search_jobs(self, query, filters=None, limit=20):
         filters = filters or {}
         query_embedding = self.get_embedding(query)
-        where_clauses = ["embedding IS NOT NULL"]
-        params = {
-            "query_embedding": str(query_embedding),
-            "limit": limit * 2  
-        }
+        
+        where_clauses = []
+        params = {"limit": limit * 3}  # Get more to ensure we have enough after scoring
+        
+        # Always try to get all jobs first, then score them
+        if query_embedding:
+            where_clauses.append("embedding IS NOT NULL")
+            params["query_embedding"] = str(query_embedding)
+            vector_select = "1 - (embedding <=> :query_embedding) as vector_score"
+        else:
+            vector_select = "0.1 as vector_score"
         
         if filters.get('location'):
-            
             loc = filters['location'].lower()
             where_clauses.append("LOWER(location) LIKE :location")
             params['location'] = f"%{loc}%"
 
         if filters.get('experience') and filters['experience'] != 'Any':
-             exp = filters['experience'].lower()
-             if 'fresher' in exp:
-                 where_clauses.append("(LOWER(experience) LIKE '%fresher%' OR LOWER(experience) LIKE '%0%')")
-             else:
-                 where_clauses.append("LOWER(experience) LIKE :experience")
-                 params['experience'] = f"%{exp}%"
-
-        if filters.get('role_type'):
-             params['role_type'] = f"%{filters['role_type'].lower()}%"
+            exp = filters['experience'].lower()
+            if 'fresher' in exp:
+                where_clauses.append("(LOWER(experience) LIKE '%fresher%' OR LOWER(experience) LIKE '%0%')")
+            else:
+                where_clauses.append("LOWER(experience) LIKE :experience")
+                params['experience'] = f"%{exp}%"
             
-        where_str = " AND ".join(where_clauses)
-        
+        where_str = " AND ".join(where_clauses) if where_clauses else "1=1"
         
         with self.engine.connect() as conn:
             stmt = text(f"""
                 SELECT id, title, role, location, experience, description, 
                        listing_url, apply_url, posted_date,
-                       1 - (embedding <=> :query_embedding) as vector_score
+                       {vector_select}
                 FROM jobs 
                 WHERE {where_str}
                 ORDER BY vector_score DESC
@@ -125,15 +102,30 @@ class JobRAG:
         if jobs_df.empty:
             return pd.DataFrame()
 
+        # Priority scoring: Role > Title > Vector similarity
+        role_score = 0.0
+        title_score = 0.0
         
+        if filters.get('role_type'):
+            role_term = filters['role_type'].lower()
+            # Role match gets highest score (0.8)
+            jobs_df['role_match'] = jobs_df['role'].fillna('').str.lower().str.contains(role_term, na=False).astype(float) * 0.8
+            # Title match gets medium score (0.6)
+            jobs_df['title_match'] = jobs_df['title'].fillna('').str.lower().str.contains(role_term, na=False).astype(float) * 0.6
+            # Final score: Role (highest) + Title (medium) + Vector (lowest)
+            jobs_df['final_score'] = jobs_df['role_match'] + jobs_df['title_match'] + (jobs_df['vector_score'] * 0.2)
+        else:
+            # If no role_type, use vector similarity only
+            jobs_df['final_score'] = jobs_df['vector_score']
+            jobs_df['role_match'] = 0.0
+            jobs_df['title_match'] = 0.0
+
+        # Add skill matching
         user_skills = filters.get('resume_skills', set())
-        
-        
         if not user_skills:
             user_skills = self.extract_skills(query)
 
         if user_skills:
-            
             skill_scores = []
             matched_skills_list = []
             
@@ -144,27 +136,17 @@ class JobRAG:
             
             jobs_df['skill_score'] = skill_scores
             jobs_df['matched_skills'] = matched_skills_list
-            jobs_df['final_score'] = (jobs_df['vector_score'] * 0.7) + (jobs_df['skill_score'] * 0.3)
-            if filters.get('role_type'):
-                 jobs_df['final_score'] += 0.15
-            matches_skills = jobs_df['skill_score'] > 0.5
-            jobs_df.loc[matches_skills, 'final_score'] += 0.1
-            has_any_skill = jobs_df['skill_score'] > 0
-            jobs_df.loc[has_any_skill, 'final_score'] += 0.05
-
+            # Add skill bonus to final score
+            jobs_df['final_score'] += jobs_df['skill_score'] * 0.3
         else:
-            
-            jobs_df['final_score'] = jobs_df['vector_score'] * 1.2
+            jobs_df['skill_score'] = 0.0
             jobs_df['matched_skills'] = [[] for _ in range(len(jobs_df))]
 
-        
         jobs_df['final_score'] = jobs_df['final_score'].clip(upper=1.0)
-
-        
         jobs_df = jobs_df.sort_values('final_score', ascending=False).head(limit)
         
         return jobs_df
-    
+
     def generate_response(self, query, jobs_df, user_skills=None):
         if not user_skills:
             user_skills = set()
@@ -173,30 +155,38 @@ class JobRAG:
             return "No jobs found matching your criteria."
         
         user_skills_str = ", ".join(sorted(user_skills)) if user_skills else "None provided"
-        top_jobs = jobs_df.head(5)
+        top_jobs = jobs_df.head(4)
+        
+        # Find skills mentioned in job descriptions that user doesn't have
+        all_job_skills = set()
+        for _, row in top_jobs.iterrows():
+            job_skills = self.extract_skills(row['description'])
+            all_job_skills.update(job_skills)
+        
+        missing_skills = all_job_skills - user_skills
+        missing_skills_str = ", ".join(sorted(list(missing_skills)[:5])) if missing_skills else "None identified"
         
         context = "\n".join([
             f"- {row['title']} at {row['location']} (Score: {row['final_score']:.2f}). Matched skills: {', '.join(row['matched_skills'])}"
             for _, row in top_jobs.iterrows()
         ])
 
-        prompt = f"""User currently has these skills: {user_skills_str}
+        prompt = f"""User Current Skills: {user_skills_str}
 
-Analyze ONLY these top jobs:
+Top 4 Job Matches:
 {context}
 
-Generate a concise response in this exact format:
+Skills found in jobs but NOT in user's current skills: {missing_skills_str}
 
-**Match Analysis**
-[Brief explanation matching jobs to user skills]
+IMPORTANT: Only suggest skills from the "NOT in user's current skills" list above. Do NOT suggest skills the user already has.
 
-**Recommended Skills**
-[Suggest 2-3 standard industry skills that bridge the gap between user's current skills and the target role]
+Provide a brief analysis:
+1. Match Summary: Why these top 4 jobs fit the user's profile
+2. Missing Skills: From the missing skills list only, suggest 2-3 most important ones for long-term career growth
+3. Alternative Roles: 2 related job titles
 
-**Alternative Roles**
-[List 2-3 career paths strictly based on user's existing skills]
+Keep response under 150 words."""
 
-Be direct. Use bullet points."""
         try:
             response = requests.post(
                 f"{self.ollama_url}/api/generate",
@@ -205,36 +195,30 @@ Be direct. Use bullet points."""
                     "prompt": prompt,
                     "stream": False,
                     "options": {
-                        "num_predict": 250,
+                        "num_predict": 150,
                         "temperature": 0.3,
                         "num_threads": 4
                     }
                 },
-                timeout=200
+                timeout=120
             )
             response.raise_for_status()
             return response.json().get("response", "Analysis unavailable.")
         except Exception as e:
             print(f"LLM Error: {e}")
-            # Fallback response
             total_jobs = len(jobs_df)
             top_job = jobs_df.iloc[0]
-            top_matched = top_job.get('matched_skills', []) if not jobs_df.empty else []
-            top_missing = top_job.get('missing_skills', []) if not jobs_df.empty else []
+            top_matched = top_job.get('matched_skills', [])
             
             response = f"Found {total_jobs} relevant positions. "
             response += f"Best match: '{top_job['title']}' with {top_job['final_score']*100:.0f}% compatibility. "
             if top_matched:
-                response += f"Strong skills match: {', '.join(top_matched[:4])}. "
-            if top_missing:
-                 response += f"Consider developing: {', '.join(top_missing[:3])}."
-            else:
-                 response += "Consider developing: related technologies."
-
+                response += f"Strong skills match: {', '.join(top_matched[:3])}. "
+            response += "Consider developing related technologies for better matches."
             return response
 
     def chat(self, query, filters=None):
-        """Unified chat interface"""
+        """Main chat interface"""
         try:
             filters = filters or {}
             jobs = self.search_jobs(query, filters)
@@ -242,7 +226,6 @@ Be direct. Use bullet points."""
             if jobs.empty:
                 return {"response": "No relevant jobs found matching your criteria.", "jobs": []}
             
-            # Get user skills for analysis
             user_skills = filters.get('resume_skills', set())
             if not user_skills:
                 user_skills = self.extract_skills(query)
@@ -259,11 +242,12 @@ if __name__ == "__main__":
     DB_URL = "postgresql+psycopg2://postgres:dbda123@localhost:35432/postgres"
     rag = JobRAG(DB_URL)
     
-    print("Testing Hybrid Search...")
+    print("Testing Job Search...")
     filters = {
         'location': 'Bangalore',
-        'resume_skills': {'python', 'django', 'sql'}
+        'role_type': 'Data Scientist',
+        'resume_skills': {'python', 'machine learning', 'sql'}
     }
-    result = rag.chat("Looking for python developer jobs", filters)
+    result = rag.chat("Looking for data scientist jobs", filters)
     print("Response:", result["response"])
     print(f"\nFound {len(result['jobs'])} jobs")

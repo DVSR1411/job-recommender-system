@@ -15,6 +15,63 @@ BLOCKED_KEYWORDS = {'telegram', 'freshersnow', 'whatsapp'}
 DAYS_BACK = 40
 DB_URL = "postgresql+psycopg2://postgres:dbda123@localhost:35432/postgres"
 
+def clean_job_data(df):
+    """Clean and normalize job data"""
+    for idx, row in df.iterrows():
+        location = str(row.get('location', '')).strip()
+        experience = str(row.get('experience', '')).strip()
+        description = str(row.get('description', '')).strip()
+        title = str(row.get('title', '')).strip()
+        
+        # Truncate title to fit database constraints
+        if len(title) > 500:
+            df.at[idx, 'title'] = title[:497] + '...'
+        
+        # Clean location - handle multiple locations, null/empty values, and long text
+        if not location or location.lower() in ['nan', 'none', '', 'null'] or location == '':
+            df.at[idx, 'location'] = 'Pan India'
+        elif 'multiple locations' in location.lower() or len(location) > 200:
+            # Move long location or multiple locations to description
+            if not description or description.lower() in ['nan', 'none', '', 'null']:
+                df.at[idx, 'description'] = f"Location: {location}"
+            else:
+                df.at[idx, 'description'] = f"{description}\n\nLocation: {location}"
+            df.at[idx, 'location'] = 'Pan India'
+        
+        # Check if experience is too long (likely description)
+        valid_exp_keywords = ['fresher', '0', '1', '2', '3', '4', '5', 'year', 'batch', '2024', '2025', 'experience']
+        
+        # Handle null/empty experience first
+        if not experience or experience.lower() in ['nan', 'none', '', 'null'] or experience == '':
+            df.at[idx, 'experience'] = 'Freshers'
+        elif len(experience) > 100 or (experience and not any(keyword in experience.lower() for keyword in valid_exp_keywords)):
+            # Move invalid experience to description
+            if not description or description.lower() in ['nan', 'none', '', 'null']:
+                df.at[idx, 'description'] = experience
+            else:
+                df.at[idx, 'description'] = f"{description}\n\n{experience}"
+            df.at[idx, 'experience'] = 'Freshers'
+        elif len(experience) > 100:
+            df.at[idx, 'experience'] = experience[:97] + '...'
+        
+        # Handle missing descriptions
+        final_desc = str(df.at[idx, 'description']).strip()
+        if not final_desc or final_desc.lower() in ['nan', 'none', '', 'null']:
+            # Check if experience has useful info
+            exp_text = str(df.at[idx, 'experience']).strip()
+            if len(exp_text) > 30:
+                df.at[idx, 'description'] = exp_text
+                df.at[idx, 'experience'] = 'Freshers'
+            else:
+                df.at[idx, 'description'] = 'No detailed description available. Please visit the apply link for more information.'
+        
+        # Clean description - remove 'nan' at end
+        final_desc = str(df.at[idx, 'description']).strip()
+        if final_desc.endswith('\n\nnan'):
+            df.at[idx, 'description'] = final_desc[:-5].strip()
+    
+    return df
+
 def scrape_freshersnow():
     print(f"Starting FreshersNow scraper... (Last {DAYS_BACK} days)")
     
@@ -157,11 +214,7 @@ def scrape_freshersnow():
     
     df = pd.DataFrame(rows)
     
-    df["location"] = df["location"].fillna("Pan India")
-    df["experience"] = df["experience"].fillna("Freshers")
-    df["description"] = df["description"].fillna(
-        "No detailed description available. Please visit the apply link for more information."
-    )
+    df = clean_job_data(df)
     df["apply_url"] = df["apply_url"].fillna(df["listing_url"])
     df["source"] = "freshersnow"
     
