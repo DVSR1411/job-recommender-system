@@ -3,6 +3,7 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 import re
 from concurrent.futures import ThreadPoolExecutor
+import config
 ROLE_PATTERNS = [
     (re.compile(r"\b(ai|artificial\s+intelligence)[/\s]+(ml|machine\s+learning)\s+(engineer|scientist|specialist|developer)\b", re.I), "AI/ML Engineer"),
     (re.compile(r"\b(machine\s+learning|ml)\s+(engineer|scientist|specialist|developer)\b", re.I), "ML Engineer"),
@@ -46,14 +47,14 @@ ROLE_PATTERNS = [
 ]
 
 class JobProcessor:
-    def __init__(self, db_url, ollama_url="http://localhost:11434"):
+    def __init__(self, db_url=None, ollama_url=None):
         self.engine = create_engine(
-            db_url,
+            db_url or config.DB_URL,
             pool_size=10,
             max_overflow=20,
             pool_pre_ping=True
         )
-        self.ollama_url = ollama_url
+        self.ollama_url = ollama_url or config.OLLAMA_URL
 
     def get_embedding(self, text):
         response = requests.post(
@@ -124,6 +125,5 @@ class JobProcessor:
                 jobs.to_dict("records")
             )
 if __name__ == "__main__":
-    DB_URL = "postgresql+psycopg2://postgres:dbda123@localhost:35432/postgres"
-    processor = JobProcessor(DB_URL)
+    processor = JobProcessor()
     processor.process_jobs_parallel(max_workers=8, limit=200)

@@ -3,11 +3,24 @@ import json
 from sqlalchemy import create_engine, text
 import pandas as pd
 import re
+import config
 
 class JobRAG:
-    def __init__(self, db_url, ollama_url="http://localhost:11434"):
-        self.engine = create_engine(db_url)
-        self.ollama_url = ollama_url
+    def __init__(self, db_url=None, ollama_url=None):
+        self.engine = create_engine(db_url or config.DB_URL)
+        self.ollama_url = ollama_url or config.OLLAMA_URL
+        self.skill_patterns = {
+            "spark": r"\b(py)?spark\b",
+            "power bi": r"\bpower\s*bi\b",
+            "machine learning": r"\b(machine\s*learning|ml)\b",
+            "deep learning": r"\b(deep\s*learning|dl)\b",
+            "javascript": r"\b(java\s*script|javascript|js)\b",
+            "typescript": r"\b(type\s*script|typescript|ts)\b",
+            "postgresql": r"\b(postgres|postgresql)\b",
+            "mysql": r"\b(my\s*sql|mysql)\b",
+            "c++": r"\b(c\+\+)\b",
+            "c#": r"\b(c#|c sharp)\b",
+        }
         self.tech_skills = {
             'python', 'java', 'javascript', 'typescript', 'c++', 'c#', 'go', 'rust', 'php', 'ruby',
             'react', 'angular', 'vue', 'node', 'django', 'flask', 'fastapi', 'spring', 'asp.net',
@@ -37,7 +50,12 @@ class JobRAG:
             return set()
         text_lower = text.lower()
         found_skills = set()
+        for skill, pattern in self.skill_patterns.items():
+            if re.search(pattern, text_lower):
+                found_skills.add(skill)
         for skill in self.tech_skills:
+            if skill in self.skill_patterns:
+                continue
             pattern = r'\b' + re.escape(skill) + r'\b'
             if re.search(pattern, text_lower):
                 found_skills.add(skill)
@@ -108,14 +126,10 @@ class JobRAG:
         
         if filters.get('role_type'):
             role_term = filters['role_type'].lower()
-            # Role match gets highest score (0.8)
-            jobs_df['role_match'] = jobs_df['role'].fillna('').str.lower().str.contains(role_term, na=False).astype(float) * 0.8
-            # Title match gets medium score (0.6)
-            jobs_df['title_match'] = jobs_df['title'].fillna('').str.lower().str.contains(role_term, na=False).astype(float) * 0.6
-            # Final score: Role (highest) + Title (medium) + Vector (lowest)
-            jobs_df['final_score'] = jobs_df['role_match'] + jobs_df['title_match'] + (jobs_df['vector_score'] * 0.2)
+            jobs_df['title_match'] = jobs_df['title'].fillna('').str.lower().str.contains(role_term, na=False).astype(float) * 0.8
+            jobs_df['role_match'] = jobs_df['role'].fillna('').str.lower().str.contains(role_term, na=False).astype(float) * 0.5
+            jobs_df['final_score'] = jobs_df['title_match'] + jobs_df['role_match'] + (jobs_df['vector_score'] * 0.3)
         else:
-            # If no role_type, use vector similarity only
             jobs_df['final_score'] = jobs_df['vector_score']
             jobs_df['role_match'] = 0.0
             jobs_df['title_match'] = 0.0
@@ -136,7 +150,6 @@ class JobRAG:
             
             jobs_df['skill_score'] = skill_scores
             jobs_df['matched_skills'] = matched_skills_list
-            # Add skill bonus to final score
             jobs_df['final_score'] += jobs_df['skill_score'] * 0.3
         else:
             jobs_df['skill_score'] = 0.0
@@ -239,8 +252,7 @@ Keep response under 150 words."""
             return {"response": f"Error: {str(e)}", "jobs": []}
 
 if __name__ == "__main__":
-    DB_URL = "postgresql+psycopg2://postgres:dbda123@localhost:35432/postgres"
-    rag = JobRAG(DB_URL)
+    rag = JobRAG()
     
     print("Testing Job Search...")
     filters = {

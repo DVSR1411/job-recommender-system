@@ -6,16 +6,22 @@ CREATE EXTENSION IF NOT EXISTS vector;
 
 -- Create jobs table
 CREATE TABLE IF NOT EXISTS jobs (
-    id UUID DEFAULT gen_random_uuid(),
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     title VARCHAR(500) NOT NULL,
     description TEXT,
     location VARCHAR(200) DEFAULT 'Pan India',
     experience VARCHAR(100) DEFAULT 'Freshers',
     listing_url TEXT,
     apply_url TEXT,
-    posted_date DATE,
+    posted_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     source VARCHAR(50),
     role VARCHAR(100),
-    embedding vector(768),
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    embedding vector(768)
 );
+
+-- Essential indexes only
+CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_unique_title_url 
+ON jobs (title, apply_url);
+
+CREATE INDEX IF NOT EXISTS idx_jobs_embedding 
+ON jobs USING ivfflat (embedding vector_cosine_ops);

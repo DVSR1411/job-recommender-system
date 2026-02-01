@@ -4,6 +4,10 @@ from datetime import datetime, timedelta
 import pandas as pd
 import time
 from sqlalchemy import create_engine
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import config
 
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
@@ -13,7 +17,6 @@ HEADERS = {
 BLOCKED_KEYWORDS = {'telegram', 'jobsnet', 'acciojob', 'whatsapp'}
 DAYS_BACK = 30
 BASE_URL = "https://jobsnet.in/page/{}/"
-DB_URL = "postgresql+psycopg2://postgres:dbda123@localhost:35432/postgres"
 
 def clean_job_data(df):
     """Clean and normalize job data"""
@@ -224,7 +227,7 @@ def scrape_jobsnet():
     print(f"Scraping completed. Total jobs: {len(df)}")
     
     # Save to database
-    engine = create_engine(DB_URL)
+    engine = create_engine(config.DB_URL)
     df.to_sql(
         name="jobs",
         con=engine,
